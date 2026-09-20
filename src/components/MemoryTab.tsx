@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Brain, Network, Search, Plus, Layers, Tag, ArrowRight, Share2, Sparkles } from 'lucide-react';
 import { EpisodicMemoryItem, KnowledgeGraph, SemanticNode, SemanticEdge } from '../types';
+import { D3ForceGraph } from './D3ForceGraph';
 
 interface MemoryTabProps {
   onExecuteCode: (code: string) => void;
@@ -324,76 +325,12 @@ export const MemoryTab: React.FC<MemoryTabProps> = ({ onExecuteCode }) => {
               </div>
             )}
 
-            {/* SVG Visual Graph Representation */}
-            <div className="h-72 w-full bg-zinc-950 rounded-xl border border-zinc-800 relative overflow-hidden flex items-center justify-center p-4">
-              <svg className="w-full h-full">
-                {/* Edges */}
-                {graph.edges.slice(0, 18).map((edge, idx) => {
-                  const x1 = 80 + (idx % 5) * 160;
-                  const y1 = 50 + Math.floor(idx / 5) * 65;
-                  const x2 = x1 + 80;
-                  const y2 = y1 + 35;
-                  return (
-                    <g key={edge.id || idx}>
-                      <line
-                        x1={x1}
-                        y1={y1}
-                        x2={x2}
-                        y2={y2}
-                        stroke="#334155"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 2"
-                      />
-                      <text
-                        x={(x1 + x2) / 2}
-                        y={(y1 + y2) / 2 - 4}
-                        fill="#06b6d4"
-                        fontSize="9"
-                        fontFamily="monospace"
-                        textAnchor="middle"
-                      >
-                        {edge.relation}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Nodes */}
-                {graph.nodes.slice(0, 15).map((node, idx) => {
-                  const cx = 80 + (idx % 5) * 160;
-                  const cy = 50 + Math.floor(idx / 5) * 65;
-                  const isTarget = node.id.toLowerCase() === semanticQuery.toLowerCase().replace(/\s+/g, '_');
-                  return (
-                    <g
-                      key={node.id}
-                      onClick={() => handleExploreSemantic(node.id)}
-                      className="cursor-pointer group"
-                    >
-                      <circle
-                        cx={cx}
-                        cy={cy}
-                        r={isTarget ? 16 : 12}
-                        fill={isTarget ? '#06b6d4' : '#1e293b'}
-                        stroke={isTarget ? '#67e8f9' : '#0ea5e9'}
-                        strokeWidth="2"
-                        className="transition-all duration-300"
-                      />
-                      <text
-                        x={cx}
-                        y={cy + 22}
-                        fill={isTarget ? '#67e8f9' : '#e2e8f0'}
-                        fontSize="10"
-                        fontFamily="monospace"
-                        textAnchor="middle"
-                        fontWeight={isTarget ? 'bold' : 'normal'}
-                      >
-                        {node.label.length > 14 ? node.label.slice(0, 12) + '..' : node.label}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
+            {/* D3.js Force-Directed Interactive Graph Visualizer */}
+            <D3ForceGraph
+              graph={graph}
+              selectedConcept={semanticQuery}
+              onSelectNode={handleExploreSemantic}
+            />
 
             {/* Nodes catalog table */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">

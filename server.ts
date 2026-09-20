@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { createServer as createViteServer } from 'vite';
 import { genesisEngine } from './server/engine';
 import { CodeSandbox } from './server/sandbox';
@@ -131,24 +132,50 @@ async function startServer() {
     }
   });
 
-  // Hardened Complexity Verifier Endpoint
+  // Hardened Complexity Verifier Endpoint with Subprocess Protection
   app.post('/api/verifier/hardened', (req, res) => {
     try {
-      const { code = '', maxNesting = 3 } = req.body;
+      const { code = '' } = req.body || {};
       const scriptPath = path.join(process.cwd(), 'server', 'hardened_verifier.py');
+
       const pyRes = spawnSync('python3', [scriptPath], {
         input: code,
         encoding: 'utf-8',
         timeout: 3000,
+        maxBuffer: 1024 * 512,
       });
-      if (pyRes.status === 0 && pyRes.stdout) {
+
+      if (pyRes.error || pyRes.status !== 0 || !pyRes.stdout) {
+        const fallback = CodeSandbox.verifyComplexity(code);
+        const errMsg = pyRes.error?.message || (pyRes.stderr ? pyRes.stderr.trim() : '') || 'Python verifier process exit non-zero or unavailable';
+        return res.json({
+          ...fallback,
+          verifierEngine: 'js_fallback',
+          note: `Subprocess warning: ${errMsg}. Applied JS AST complexity fallback.`,
+        });
+      }
+
+      try {
         const parsed = JSON.parse(pyRes.stdout.trim());
-        res.json(parsed);
-      } else {
-        res.status(500).json({ error: pyRes.stderr || 'Verification execution failed' });
+        return res.json({
+          ...parsed,
+          verifierEngine: 'python_hardened',
+        });
+      } catch (parseErr: any) {
+        const fallback = CodeSandbox.verifyComplexity(code);
+        return res.json({
+          ...fallback,
+          verifierEngine: 'js_fallback',
+          note: `JSON parse error on Python output (${parseErr.message}). Applied JS AST fallback.`,
+        });
       }
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      const fallback = CodeSandbox.verifyComplexity(req.body?.code || '');
+      return res.json({
+        ...fallback,
+        verifierEngine: 'js_fallback',
+        error: err.message || 'Unexpected verifier error',
+      });
     }
   });
 

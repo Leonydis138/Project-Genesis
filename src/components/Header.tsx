@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, Pause, Zap, Flame, RefreshCw, Cpu, Brain, Dna, Activity } from 'lucide-react';
 import { GenesisStats } from '../types';
+import { GoogleDriveSync } from './GoogleDriveSync';
 
 interface HeaderProps {
   stats: GenesisStats | null;
@@ -87,6 +88,8 @@ export const Header: React.FC<HeaderProps> = ({
               <RefreshCw className={`w-3.5 h-3.5 ${isBenchmarkLoading ? 'animate-spin' : ''}`} />
               Run Benchmarks
             </button>
+
+            <GoogleDriveSync stats={stats} />
           </div>
         </div>
 

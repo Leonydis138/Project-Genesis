@@ -15,6 +15,7 @@ import {
   GitFork,
   Gauge,
   Check,
+  Download,
 } from 'lucide-react';
 import { Task, StaticCriticAnalysis, ComplexityResult } from '../types';
 
@@ -84,6 +85,40 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
     } finally {
       setIsRunningAll(false);
     }
+  };
+
+  const handleExportResultsJSON = () => {
+    const passedCount = tasks.filter(t => t.lastPassed).length;
+    const totalCount = tasks.length;
+    const passRate = totalCount > 0 ? (passedCount / totalCount) * 100 : 0;
+
+    const exportData = {
+      project: 'Project Genesis AI Laboratory',
+      timestamp: new Date().toISOString(),
+      passRate: `${passRate.toFixed(1)}%`,
+      summary: {
+        passedTasks: passedCount,
+        totalTasks: totalCount,
+      },
+      taskLogs: tasks.map(task => ({
+        id: task.id,
+        name: task.name,
+        category: task.category,
+        difficulty: task.difficulty,
+        lastPassed: task.lastPassed ?? null,
+        lastRunAt: task.lastRunAt ? new Date(task.lastRunAt).toISOString() : null,
+        prompt: task.prompt,
+        test: task.test,
+      })),
+    };
+
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `genesis_benchmark_results_${Date.now()}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
   };
 
   const handleVerifyComplexity = async () => {
@@ -262,14 +297,25 @@ class BST:
           </p>
         </div>
 
-        <button
-          onClick={handleRunAll}
-          disabled={isRunningAll}
-          className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white rounded-xl text-xs font-mono font-bold flex items-center gap-2 disabled:opacity-50 transition-all shadow-md shadow-indigo-950"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRunningAll ? 'animate-spin' : ''}`} />
-          Run All 8 Benchmarks
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportResultsJSON}
+            className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all shadow-md"
+            title="Export test suite results as a JSON file with timestamps, pass rate, and task logs"
+          >
+            <Download className="w-4 h-4 text-amber-400" />
+            Export Results JSON
+          </button>
+
+          <button
+            onClick={handleRunAll}
+            disabled={isRunningAll}
+            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white rounded-xl text-xs font-mono font-bold flex items-center gap-2 disabled:opacity-50 transition-all shadow-md shadow-indigo-950"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRunningAll ? 'animate-spin' : ''}`} />
+            Run All 8 Benchmarks
+          </button>
+        </div>
       </div>
 
       {/* Benchmark Tasks Cards Grid */}
