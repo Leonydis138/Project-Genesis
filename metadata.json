@@ -1,0 +1,6 @@
+{
+  "name": "Project Genesis",
+  "description": "The Hardest, Most Advanced AI Laboratory combining PPO, RLAIF, MCTS, evolutionary search, hybrid memory, multi-agent debate, and self-play.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
