@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dna, Trophy, Sparkles, TrendingUp, RefreshCw, Cpu, Award } from 'lucide-react';
 import { EvolutionIndividual } from '../types';
+import { fetchJson } from '../lib/http';
 
 export const EvolutionTab: React.FC = () => {
   const [population, setPopulation] = useState<EvolutionIndividual[]>([]);
@@ -15,10 +16,7 @@ export const EvolutionTab: React.FC = () => {
 
   const fetchEvolution = async () => {
     try {
-      const res = await fetch('/api/evolution');
-      const contentType = res.headers.get('content-type') || '';
-      if (!res.ok || !contentType.includes('application/json')) return;
-      const data = await res.json();
+      const data = await fetchJson<{ population?: EvolutionIndividual[]; round?: number; history?: any[]; activeConfig?: any }>('/api/evolution', undefined, { timeoutMs: 10000 });
       if (data.population) setPopulation(data.population);
       if (data.round !== undefined) setRound(data.round);
       if (data.history) setHistory(data.history);
@@ -31,8 +29,7 @@ export const EvolutionTab: React.FC = () => {
   const handleStepEvolution = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/evolution/step', { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ population?: EvolutionIndividual[]; round?: number }>('/api/evolution/step', { method: 'POST' }, { timeoutMs: 15000 });
       if (data.population) setPopulation(data.population);
       if (data.round !== undefined) setRound(data.round);
       await fetchEvolution();

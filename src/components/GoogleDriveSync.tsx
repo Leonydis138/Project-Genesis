@@ -22,9 +22,8 @@ export const GoogleDriveSync: React.FC<GoogleDriveSyncProps> = ({ stats }) => {
   }, []);
 
   const handleConnectGoogleDrive = () => {
-    // Initiate Google Identity Services Token Client if available in window
     const gWindow = window as any;
-    if (gWindow.google?.accounts?.oauth2) {
+    if (gWindow.google?.accounts?.oauth2?.initTokenClient) {
       const client = gWindow.google.accounts.oauth2.initTokenClient({
         client_id: '622667494717-3nf8ibgspnb196tooaajecnit6cfh3a3.apps.googleusercontent.com',
         scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly',
@@ -37,14 +36,15 @@ export const GoogleDriveSync: React.FC<GoogleDriveSyncProps> = ({ stats }) => {
         },
       });
       client.requestAccessToken();
-    } else {
-      // Fallback: prompt for access token or OAuth confirmation
-      const token = prompt('Enter Google Drive Access Token (or authorize via OAuth popup):');
-      if (token) {
-        setAccessToken(token);
-        localStorage.setItem('genesis_gdrive_token', token);
-        setSyncStatus('Token saved manually');
-      }
+      return;
+    }
+
+    const token = window.prompt('Enter Google Drive Access Token (or authorize via OAuth popup):');
+    if (token && token.trim()) {
+      const cleanToken = token.trim();
+      setAccessToken(cleanToken);
+      localStorage.setItem('genesis_gdrive_token', cleanToken);
+      setSyncStatus('Token saved manually');
     }
   };
 

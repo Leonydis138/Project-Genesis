@@ -18,6 +18,7 @@ import {
   Download,
 } from 'lucide-react';
 import { Task, StaticCriticAnalysis, ComplexityResult } from '../types';
+import { fetchJson } from '../lib/http';
 
 interface BenchmarkTabProps {
   initialCode?: string;
@@ -51,6 +52,7 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
   const [complexity, setComplexity] = useState<ComplexityResult | null>(null);
   const [rewardScore, setRewardScore] = useState<number | null>(null);
   const [execTime, setExecTime] = useState<number | null>(null);
+  const [researchSummary, setResearchSummary] = useState<string>('');
 
   useEffect(() => {
     fetchTasks();
@@ -64,10 +66,7 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
 
   const fetchTasks = async () => {
     try {
-      const res = await fetch('/api/tasks');
-      const contentType = res.headers.get('content-type') || '';
-      if (!res.ok || !contentType.includes('application/json')) return;
-      const data = await res.json();
+      const data = await fetchJson<{ tasks?: Task[] }>('/api/tasks', undefined, { timeoutMs: 10000 });
       if (data.tasks) setTasks(data.tasks);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
@@ -77,8 +76,7 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
   const handleRunAll = async () => {
     setIsRunningAll(true);
     try {
-      const res = await fetch('/api/tasks/run-all', { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ tasks?: Task[] }>('/api/tasks/run-all', { method: 'POST' }, { timeoutMs: 30000 });
       if (data.tasks) setTasks(data.tasks);
     } catch (err) {
       console.error('Failed to run all benchmarks:', err);
@@ -124,12 +122,15 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
   const handleVerifyComplexity = async () => {
     setIsVerifying(true);
     try {
-      const res = await fetch('/api/verify-complexity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      const data = await res.json();
+      const data = await fetchJson<ComplexityResult>(
+        '/api/verify-complexity',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        },
+        { timeoutMs: 15000 }
+      );
       setComplexity(data);
     } catch (err: any) {
       console.error('Failed to verify complexity:', err);
@@ -143,12 +144,19 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
     setOutput('');
     setError('');
     try {
-      const res = await fetch('/api/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, testCode, enforceVerification }),
-      });
-      const data = await res.json();
+      const data = await fetchJson<{
+        execution?: { output?: string; success?: boolean; error?: string; executionTimeMs?: number; complexity?: ComplexityResult };
+        critic?: StaticCriticAnalysis;
+        rewardScore?: number;
+      }>(
+        '/api/execute',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, testCode, enforceVerification }),
+        },
+        { timeoutMs: 20000 }
+      );
       if (data.execution) {
         setOutput(data.execution.output || (data.execution.success ? 'Execution successful. All assertions passed.' : ''));
         setError(data.execution.error || '');
@@ -164,6 +172,13 @@ export const BenchmarkTab: React.FC<BenchmarkTabProps> = ({ initialCode }) => {
         }
       }
       if (data.rewardScore !== undefined) setRewardScore(data.rewardScore);
+
+      const summary = [
+        data.execution?.success ? 'Assertions passed' : 'Assertions failed',
+        data.critic ? `critic ${data.critic.score.toFixed(2)}` : 'critic unavailable',
+        data.rewardScore !== undefined ? `reward ${data.rewardScore.toFixed(2)}` : 'reward unavailable',
+      ].join(' • ');
+      setResearchSummary(summary);
     } catch (err: any) {
       setError(err.message || 'Execution failed');
     } finally {

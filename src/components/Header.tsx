@@ -8,6 +8,8 @@ interface HeaderProps {
   onToggleSelfPlay: () => void;
   onStepSelfPlay: () => void;
   onRunBenchmarks: () => void;
+  onExportLab: () => void;
+  onResetLabState: () => void;
   isSelfPlayLoading: boolean;
   isBenchmarkLoading: boolean;
 }
@@ -17,6 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSelfPlay,
   onStepSelfPlay,
   onRunBenchmarks,
+  onExportLab,
+  onResetLabState,
   isSelfPlayLoading,
   isBenchmarkLoading,
 }) => {
@@ -87,6 +91,23 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isBenchmarkLoading ? 'animate-spin' : ''}`} />
               Run Benchmarks
+            </button>
+
+            <button
+              onClick={onExportLab}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold font-mono bg-zinc-900 text-emerald-400 border border-emerald-600/30 hover:bg-emerald-950/40 hover:border-emerald-500/60 transition-all"
+              title="Export the current laboratoy state as JSON"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Export Lab
+            </button>
+
+            <button
+              onClick={onResetLabState}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold font-mono bg-zinc-900 text-rose-400 border border-rose-600/30 hover:bg-rose-950/40 hover:border-rose-500/60 transition-all"
+              title="Clear the in-browser lab session"
+            >
+              Reset
             </button>
 
             <GoogleDriveSync stats={stats} />

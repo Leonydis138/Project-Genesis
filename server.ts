@@ -12,7 +12,33 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  const MAX_PROMPT_LENGTH = 2000;
+  const MAX_CODE_LENGTH = 15000;
+  const MAX_TEST_LENGTH = 12000;
+
+  const sanitizeText = (value: unknown, fieldName: string, maxLength: number) => {
+    if (typeof value !== 'string') {
+      throw new Error(`${fieldName} must be a string`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`${fieldName} is required`);
+    }
+    if (trimmed.length > maxLength) {
+      throw new Error(`${fieldName} is too long (${trimmed.length} > ${maxLength})`);
+    }
+    return trimmed;
+  };
+
+  const normalizeCode = (value: unknown, fieldName: string, maxLength: number) => {
+    let code = sanitizeText(value, fieldName, maxLength);
+    if (code.startsWith('```')) {
+      code = code.replace(/^```(?:python|py)?\s*/i, '').replace(/```\s*$/, '').trim();
+    }
+    return code;
+  };
+
+  app.use(express.json({ limit: '1mb' }));
 
   // Health endpoint
   app.get('/api/health', (req, res) => {
@@ -27,22 +53,27 @@ async function startServer() {
   // Chat & Problem Solving Generation (Debate / MCTS / Self-Consistency)
   app.post('/api/generate', async (req, res) => {
     try {
-      const { prompt, mode = 'debate' } = req.body;
-      if (!prompt) {
-        return res.status(400).json({ error: 'Prompt is required' });
-      }
-      const result = await genesisEngine.generateAnswer(prompt, mode);
+      const rawPrompt = req.body?.prompt;
+      const mode = typeof req.body?.mode === 'string' ? req.body.mode : 'debate';
+      const prompt = sanitizeText(rawPrompt, 'Prompt', MAX_PROMPT_LENGTH);
+      const normalizedMode = ['debate', 'mcts', 'direct'].includes(mode) ? mode : 'debate';
+      const result = await genesisEngine.generateAnswer(prompt, normalizedMode as 'debate' | 'mcts' | 'direct');
       res.json(result);
     } catch (err: any) {
       console.error('Error in /api/generate:', err);
-      res.status(500).json({ error: err.message || 'Generation failed' });
+      res.status(400).json({ error: err.message || 'Generation failed' });
     }
   });
 
   // RLHF Feedback Endpoint (Matches Section 18 /feedback)
   app.post('/api/feedback', (req, res) => {
     try {
-      const { response = '', rating = 0 } = req.body;
+      const response = sanitizeText(req.body?.response ?? '', 'Response', MAX_PROMPT_LENGTH);
+      const numericRating = Number(req.body?.rating ?? 0);
+      if (!Number.isFinite(numericRating)) {
+        return res.status(400).json({ error: 'Rating must be numeric' });
+      }
+      const rating = Math.min(1, Math.max(0, numericRating));
       const loss = genesisEngine.rewardModel.updateReward(response, rating);
       res.json({
         success: true,
@@ -50,17 +81,19 @@ async function startServer() {
         currentLoss: genesisEngine.rewardModel.currentLoss,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(400).json({ error: err.message || 'Feedback update failed' });
     }
   });
 
   // Code Execution Sandbox & AST Static Critic
   app.post('/api/execute', (req, res) => {
     try {
-      const { code, testCode = '', enforceVerification = false } = req.body;
-      const execResult = CodeSandbox.execute(code || '', testCode || '', { enforceVerification });
-      const criticAnalysis = StaticCritic.analyze(code || '');
-      const rewardScore = genesisEngine.rewardModel.predictReward(code || '');
+      const code = normalizeCode(req.body?.code ?? '', 'Code', MAX_CODE_LENGTH);
+      const testCode = normalizeCode(req.body?.testCode ?? '', 'Test code', MAX_TEST_LENGTH);
+      const enforceVerification = Boolean(req.body?.enforceVerification);
+      const execResult = CodeSandbox.execute(code, testCode, { enforceVerification });
+      const criticAnalysis = StaticCritic.analyze(code);
+      const rewardScore = genesisEngine.rewardModel.predictReward(code);
 
       res.json({
         execution: execResult,
@@ -68,18 +101,18 @@ async function startServer() {
         rewardScore,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(400).json({ error: err.message || 'Execution failed' });
     }
   });
 
   // Dedicated AST Complexity Analyzer verification route
   app.post('/api/verify-complexity', (req, res) => {
     try {
-      const { code = '' } = req.body;
+      const code = normalizeCode(req.body?.code ?? '', 'Code', MAX_CODE_LENGTH);
       const analysis = CodeSandbox.verifyComplexity(code);
       res.json(analysis);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(400).json({ error: err.message || 'Verification failed' });
     }
   });
 

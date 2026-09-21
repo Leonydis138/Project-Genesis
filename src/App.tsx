@@ -8,9 +8,11 @@ import { MemoryTab } from './components/MemoryTab';
 import { EvolutionTab } from './components/EvolutionTab';
 import { BenchmarkTab } from './components/BenchmarkTab';
 import { GenesisStats, ChatMessage, SelfPlayEpisode } from './types';
+import { fetchJson } from './lib/http';
+import { buildLabSnapshot, persistLabSnapshot, restoreLabSnapshot, LabTab } from './lib/labState';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'selfplay' | 'mcts' | 'memory' | 'evolution' | 'benchmark'>('chat');
+  const [activeTab, setActiveTab] = useState<LabTab>('chat');
   const [stats, setStats] = useState<GenesisStats | null>(null);
   const [episodes, setEpisodes] = useState<SelfPlayEpisode[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -19,26 +21,51 @@ export default function App() {
   const [isSelfPlayLoading, setIsSelfPlayLoading] = useState(false);
   const [isBenchmarkLoading, setIsBenchmarkLoading] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<'online' | 'offline'>('online');
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   // Sync telemetry on interval
   useEffect(() => {
+    const handleOnline = () => setNetworkStatus('online');
+    const handleOffline = () => setNetworkStatus('offline');
+
+    const restored = restoreLabSnapshot();
+    if (restored) {
+      setActiveTab(restored.activeTab);
+      setMessages(restored.messages);
+      setEpisodes(restored.episodes);
+      setStats(restored.stats);
+      setLastSavedAt(restored.savedAt);
+    }
+
+    setNetworkStatus(navigator.onLine ? 'online' : 'offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     fetchStats();
     fetchSelfPlay();
     const interval = setInterval(() => {
       fetchStats();
       fetchSelfPlay();
     }, 4000);
-    return () => clearInterval(interval);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
   }, []);
+
+  useEffect(() => {
+    const snapshot = buildLabSnapshot({ activeTab, messages, episodes, stats });
+    persistLabSnapshot(snapshot);
+    setLastSavedAt(snapshot.savedAt);
+  }, [activeTab, messages, episodes, stats]);
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/stats');
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        setStats(data);
-      }
+      const data = await fetchJson<GenesisStats>('/api/stats', undefined, { timeoutMs: 8000 });
+      setStats(data);
     } catch (err) {
       console.error('Error fetching stats:', err);
     }
@@ -46,12 +73,8 @@ export default function App() {
 
   const fetchSelfPlay = async () => {
     try {
-      const res = await fetch('/api/selfplay');
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.episodes) setEpisodes(data.episodes);
-      }
+      const data = await fetchJson<{ episodes?: SelfPlayEpisode[] }>('/api/selfplay', undefined, { timeoutMs: 8000 });
+      if (data.episodes) setEpisodes(data.episodes);
     } catch (err) {
       console.error('Error fetching selfplay:', err);
     }
@@ -74,13 +97,15 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, mode }),
-      });
-
-      const data = await res.json();
+      const data = await fetchJson<{ response?: string; transcript?: any[]; mctsTree?: any[]; context?: string[] }>(
+        '/api/generate',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, mode }),
+        },
+        { timeoutMs: 20000 }
+      );
       const botMsg: ChatMessage = {
         id: `bot_${Date.now()}`,
         role: 'assistant',
@@ -112,12 +137,15 @@ export default function App() {
     if (!targetMsg) return;
 
     try {
-      const res = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: targetMsg.content, rating }),
-      });
-      const data = await res.json();
+      const data = await fetchJson<{ loss?: number; currentLoss?: number }>(
+        '/api/feedback',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: targetMsg.content, rating }),
+        },
+        { timeoutMs: 15000 }
+      );
 
       setMessages(prev =>
         prev.map(m =>
@@ -137,8 +165,7 @@ export default function App() {
   // Toggle Self-Play loop
   const handleToggleSelfPlay = async () => {
     try {
-      const res = await fetch('/api/selfplay/toggle', { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ isActive: boolean }>('/api/selfplay/toggle', { method: 'POST' }, { timeoutMs: 10000 });
       if (stats) {
         setStats({ ...stats, is_self_play_active: data.isActive });
       }
@@ -152,8 +179,7 @@ export default function App() {
   const handleStepSelfPlay = async () => {
     setIsSelfPlayLoading(true);
     try {
-      const res = await fetch('/api/selfplay/step', { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ episode?: any }>('/api/selfplay/step', { method: 'POST' }, { timeoutMs: 20000 });
       if (data.episode) {
         setEpisodes(prev => [data.episode, ...prev]);
         triggerToast(
@@ -172,8 +198,7 @@ export default function App() {
   const handleRunBenchmarks = async () => {
     setIsBenchmarkLoading(true);
     try {
-      const res = await fetch('/api/tasks/run-all', { method: 'POST' });
-      const data = await res.json();
+      const data = await fetchJson<{ results: any[] }>('/api/tasks/run-all', { method: 'POST' }, { timeoutMs: 30000 });
       const passed = data.results.filter((r: any) => r.passed).length;
       triggerToast(`Benchmark Suite Complete: ${passed} / ${data.results.length} tasks passed assertions`);
       await fetchStats();
@@ -190,6 +215,28 @@ export default function App() {
     setActiveTab('benchmark');
   };
 
+  const handleExportLab = () => {
+    const snapshot = buildLabSnapshot({ activeTab, messages, episodes, stats });
+    const dataStr = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(snapshot, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `project-genesis-lab-${Date.now()}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    triggerToast('Lab snapshot exported');
+  };
+
+  const handleResetLabState = () => {
+    setMessages([]);
+    setEpisodes([]);
+    setStats(null);
+    setSandboxCode('');
+    setActiveTab('chat');
+    localStorage.removeItem('project-genesis-lab-state');
+    triggerToast('Lab session reset');
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-rose-500/30 selection:text-white">
       {/* Top Mission Control Header */}
@@ -198,6 +245,8 @@ export default function App() {
         onToggleSelfPlay={handleToggleSelfPlay}
         onStepSelfPlay={handleStepSelfPlay}
         onRunBenchmarks={handleRunBenchmarks}
+        onExportLab={handleExportLab}
+        onResetLabState={handleResetLabState}
         isSelfPlayLoading={isSelfPlayLoading}
         isBenchmarkLoading={isBenchmarkLoading}
       />
@@ -207,6 +256,18 @@ export default function App() {
         <div className="fixed bottom-6 right-6 z-50 bg-zinc-900 border border-amber-500/60 text-amber-200 px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-mono animate-fade-in backdrop-blur-md">
           <Bell className="w-4 h-4 text-amber-400 animate-bounce" />
           <span>{notification}</span>
+        </div>
+      )}
+
+      {!navigator.onLine && (
+        <div className="sticky top-[110px] z-20 border-b border-amber-700/50 bg-amber-950/70 px-4 py-2 text-center text-xs font-mono text-amber-200">
+          Offline mode: the app is still loaded, but live generation and sync requests will retry when connectivity returns.
+        </div>
+      )}
+
+      {lastSavedAt && (
+        <div className="px-4 pt-3 text-right text-[10px] font-mono text-zinc-400">
+          Autosave: {new Date(lastSavedAt).toLocaleTimeString()}
         </div>
       )}
 

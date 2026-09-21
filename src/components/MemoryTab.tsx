@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Brain, Network, Search, Plus, Layers, Tag, ArrowRight, Share2, Sparkles } from 'lucide-react';
 import { EpisodicMemoryItem, KnowledgeGraph, SemanticNode, SemanticEdge } from '../types';
 import { D3ForceGraph } from './D3ForceGraph';
+import { fetchJson } from '../lib/http';
 
 interface MemoryTabProps {
   onExecuteCode: (code: string) => void;
@@ -31,10 +32,7 @@ export const MemoryTab: React.FC<MemoryTabProps> = ({ onExecuteCode }) => {
 
   const fetchMemory = async () => {
     try {
-      const res = await fetch('/api/memory');
-      const contentType = res.headers.get('content-type') || '';
-      if (!res.ok || !contentType.includes('application/json')) return;
-      const data = await res.json();
+      const data = await fetchJson<{ episodic?: EpisodicMemoryItem[]; graph?: KnowledgeGraph }>('/api/memory', undefined, { timeoutMs: 10000 });
       if (data.episodic) setEpisodicList(data.episodic);
       if (data.graph) setGraph(data.graph);
     } catch (err) {
@@ -61,12 +59,11 @@ export const MemoryTab: React.FC<MemoryTabProps> = ({ onExecuteCode }) => {
     if (!concept1.trim() || !concept2.trim()) return;
     setIsLoading(true);
     try {
-      const res = await fetch('/api/memory/semantic', {
+      const data = await fetchJson<{ graph?: KnowledgeGraph }>('/api/memory/semantic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ concept1, concept2, relation }),
-      });
-      const data = await res.json();
+      }, { timeoutMs: 15000 });
       if (data.graph) {
         setGraph(data.graph);
         setAddMsg(`Linked "${concept1}" --[${relation}]--> "${concept2}"`);

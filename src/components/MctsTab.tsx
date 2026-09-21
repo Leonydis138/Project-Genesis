@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GitBranch, Trophy, Play, CheckCircle2, XCircle, Sparkles, Sliders, Code2, ArrowRight } from 'lucide-react';
 import { MCTSNodeData } from '../types';
+import { fetchJson } from '../lib/http';
 
 interface MctsTabProps {
   onExecuteCode: (code: string) => void;
@@ -17,12 +18,11 @@ export const MctsTab: React.FC<MctsTabProps> = ({ onExecuteCode }) => {
     if (!prompt.trim() || isLoading) return;
     setIsLoading(true);
     try {
-      const res = await fetch('/api/mcts', {
+      const data = await fetchJson<{ tree?: MCTSNodeData[] }>('/api/mcts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, iterations }),
-      });
-      const data = await res.json();
+      }, { timeoutMs: 25000 });
       if (data.tree) {
         setNodes(data.tree);
         const best = data.tree.find((n: MCTSNodeData) => n.isBest) || data.tree[1];
